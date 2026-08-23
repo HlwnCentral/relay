@@ -13,8 +13,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out repository
+      - name: Check out default branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
 
       - name: Fetch latest subscription
         env:
@@ -50,26 +53,52 @@ jobs:
 
           mv relay/subscription.txt.tmp relay/subscription.txt
 
-          echo "Fetched $(wc -c < relay/subscription.txt) bytes."
-          echo "Preview:"
+          echo "=== relay directory ==="
+          ls -lah relay
+          echo "=== file size ==="
+          wc -c relay/subscription.txt
+          echo "=== first 120 bytes ==="
           head -c 120 relay/subscription.txt || true
           echo
 
-      - name: Commit updated subscription
+      - name: Commit to default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
+
+          echo "Default branch: $DEFAULT_BRANCH"
+          echo "Current branch: $(git branch --show-current)"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Add first so a brand-new untracked subscription.txt is included.
-          git add relay/subscription.txt
+          # Force-add in case a repository-level ignore rule hides *.txt.
+          git add -f relay/subscription.txt
 
-          # Check the staged changes, not only already-tracked files.
+          echo "=== staged status ==="
+          git status --short
+          git diff --cached --stat || true
+
           if git diff --cached --quiet; then
-            echo "Subscription has not changed."
-            exit 0
+            echo "No staged content change."
+            echo "Checking whether subscription.txt is already tracked:"
+            git ls-files relay/subscription.txt || true
+
+            if git ls-files --error-unmatch relay/subscription.txt >/dev/null 2>&1; then
+              echo "relay/subscription.txt is already tracked and unchanged."
+              exit 0
+            fi
+
+            echo "ERROR: subscription.txt exists locally but is not staged/tracked."
+            exit 1
           fi
 
           git commit -m "Update subscription"
-          git push
+
+          # Push explicitly to the repository's default branch.
+          git push origin "HEAD:${DEFAULT_BRANCH}"
+
+          echo "=== committed file ==="
+          git ls-tree --name-only HEAD relay/
+          git log -1 --oneline
