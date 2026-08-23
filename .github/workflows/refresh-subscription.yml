@@ -51,19 +51,25 @@ jobs:
           mv relay/subscription.txt.tmp relay/subscription.txt
 
           echo "Fetched $(wc -c < relay/subscription.txt) bytes."
+          echo "Preview:"
+          head -c 120 relay/subscription.txt || true
+          echo
 
       - name: Commit updated subscription
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- relay/subscription.txt; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Add first so a brand-new untracked subscription.txt is included.
+          git add relay/subscription.txt
+
+          # Check the staged changes, not only already-tracked files.
+          if git diff --cached --quiet; then
             echo "Subscription has not changed."
             exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add relay/subscription.txt
           git commit -m "Update subscription"
           git push
