@@ -1,0 +1,69 @@
+name: Refresh Paopaogou Subscription
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch latest subscription
+        env:
+          SUBSCRIPTION_URL: ${{ secrets.SUBSCRIPTION_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUBSCRIPTION_URL:-}" ]; then
+            echo "SUBSCRIPTION_URL secret is not configured."
+            exit 1
+          fi
+
+          mkdir -p relay
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --retry 3 \
+            --retry-delay 3 \
+            --connect-timeout 20 \
+            --max-time 60 \
+            --user-agent "sing-box/1.13.0" \
+            --header "Accept: */*" \
+            "$SUBSCRIPTION_URL" \
+            --output relay/subscription.txt.tmp
+
+          if [ ! -s relay/subscription.txt.tmp ]; then
+            echo "Downloaded subscription is empty."
+            exit 1
+          fi
+
+          mv relay/subscription.txt.tmp relay/subscription.txt
+
+          echo "Fetched $(wc -c < relay/subscription.txt) bytes."
+
+      - name: Commit updated subscription
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- relay/subscription.txt; then
+            echo "Subscription has not changed."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add relay/subscription.txt
+          git commit -m "Update subscription"
+          git push
